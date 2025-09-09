@@ -1,0 +1,286 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LangGraph + OpenAI (Live Memory)</title>
+    <style>
+      :root {
+        --primary: #444;
+        --primary-light: #888;
+        --bg: #f5f5f7;
+        --card-bg: #fff;
+        --border: #d1d5db;
+        --text: #222;
+        --pill-bg: #e5e7eb;
+        --pill-border: #bdbdbd;
+        --pill-hover: #d1d5db;
+      }
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .container {
+        max-width: 800px;
+        margin: 32px auto;
+        padding: 0 8px;
+      }
+      h1 {
+        color: var(--primary);
+        margin-bottom: 12px;
+        font-weight: 600;
+        letter-spacing: -1px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+      }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.2rem 1rem 1rem 1rem;
+        box-shadow: 0 2px 8px rgba(100,100,100,0.04);
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      #log, #memory {
+        height: 38vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        background: #ededed;
+        border-radius: 6px;
+        padding: 0.8rem;
+        border: 1px solid var(--border);
+        margin-bottom: 0.5rem;
+        font-size: 1rem;
+      }
+      .msg, .mem-msg {
+        margin: .4rem 0;
+        padding: .4rem .6rem;
+        border-radius: 6px;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+      }
+      .msg:nth-child(even), .mem-msg:nth-child(even) {
+        background: #e5e7eb;
+      }
+      .role {
+        font-weight: 600;
+        margin-right: .5rem;
+        color: var(--primary-light);
+      }
+      .input-area {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-top: auto;
+      }
+      textarea {
+        width: 100%;
+        height: 5rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px;
+        font-size: 1rem;
+        background: #f3f4f6;
+        margin-bottom: 0;
+        transition: border 0.2s;
+        resize: vertical;
+        box-sizing: border-box;
+      }
+      textarea:focus {
+        border: 1.5px solid var(--primary-light);
+        outline: none;
+      }
+      button {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: .5rem 1.2rem;
+        font-size: 1rem;
+        cursor: pointer;
+        font-weight: 500;
+        box-shadow: 0 1px 4px rgba(100,100,100,0.06);
+        transition: background 0.2s, transform 0.1s;
+      }
+      button:hover {
+        background: var(--primary-light);
+        transform: translateY(-1px) scale(1.02);
+      }
+      .row {
+        display: flex;
+        gap: .5rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      small.mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #888;
+      }
+      .archives {
+        margin-top: 1rem;
+      }
+      .pill {
+        border: 1px solid var(--pill-border);
+        background: var(--pill-bg);
+        color: var(--primary);
+        padding: .15rem .6rem;
+        border-radius: 999px;
+        margin-right: .25rem;
+        cursor: pointer;
+        font-size: .95em;
+        transition: background 0.15s, color 0.15s;
+        display: inline-block;
+        margin-bottom: .25rem;
+      }
+      .pill:hover {
+        background: var(--pill-hover);
+        color: var(--primary-light);
+      }
+      @media (max-width: 800px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 500px) {
+        .container {
+          padding: 0 2px;
+        }
+        .card {
+          padding: .7rem .2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>LangGraph + OpenAI <small class="mono" id="sid"></small></h1>
+      <div class="row" style="margin-bottom:.5rem;">
+        <button id="btn-archive">New Turn</button>
+        <button id="btn-clear-ui">Clear UI Only</button>
+        <button id="btn-refresh">Refresh Memory</button>
+        <a href="/graph" target="_blank" style="text-decoration:none;"><button>View Graph</button></a>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h3 style="color:var(--primary);margin-top:0;">Chat</h3>
+          <div id="log"></div>
+          <div class="input-area">
+            <textarea id="input" placeholder="Ask me anything..."></textarea>
+            <div class="row">
+              <button id="send">Send</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="color:var(--primary);margin-top:0;">Live Memory</h3>
+          <div id="memory"></div>
+          <div class="archives">
+            <h4 style="margin-bottom:.5rem;">Previous Turns</h4>
+            <div id="archives"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const log = document.getElementById('log');
+      const memDiv = document.getElementById('memory');
+      const archivesDiv = document.getElementById('archives');
+      const input = document.getElementById('input');
+      const sidSpan = document.getElementById('sid');
+      function getSessionId() {
+        let sid = localStorage.getItem('session_id');
+        if (!sid) { sid = crypto.randomUUID().replace(/-/g, ''); localStorage.setItem('session_id', sid); }
+        sidSpan.textContent = `(session: ${sid})`; return sid;
+      }
+      function add(role, content) {
+        const div = document.createElement('div');
+        div.className = 'msg';
+        div.innerHTML = `<span class="role">${role}:</span> ${content}`;
+        log.appendChild(div); log.scrollTop = log.scrollHeight;
+      }
+      // Render memory as chat bubbles
+      function renderMemory(msgs) {
+        memDiv.innerHTML = '';
+        if (!msgs.length) {
+          memDiv.innerHTML = '<span style="color:#888;">No memory yet.</span>';
+          return;
+        }
+        msgs.forEach((m, i) => {
+          const div = document.createElement('div');
+          div.className = 'mem-msg';
+          div.innerHTML = `<span class="role">${m.role}:</span> ${m.content}`;
+          memDiv.appendChild(div);
+        });
+        memDiv.scrollTop = memDiv.scrollHeight;
+      }
+      async function refreshMemory() {
+        const sid = getSessionId();
+        const res = await fetch(`/memory?session_id=${sid}`);
+        const data = await res.json();
+        const msgs = data.current || [];
+        renderMemory(msgs);
+        const aRes = await fetch(`/memory/archives?session_id=${sid}`);
+        const a = await aRes.json(); archivesDiv.innerHTML = '';
+        (a.archives || []).forEach(item => {
+          // Use first user message as short title, fallback to archive id
+          let title = `Turn #${item.id}`;
+          if (item.messages && item.messages.length) {
+            const firstUser = item.messages.find(m => m.role === 'user');
+            if (firstUser && firstUser.content) {
+              title = firstUser.content.length > 32
+                ? firstUser.content.slice(0, 32) + '...'
+                : firstUser.content;
+            }
+          }
+          const pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.textContent = title;
+          pill.title = `Archive #${item.id} (${item.size} msgs)`;
+          pill.onclick = async () => {
+            const ar = await fetch(`/memory/archive/${item.id}?session_id=${sid}`);
+            const aj = await ar.json();
+            // Show archive as chat
+            let chat = '';
+            (aj.messages || []).forEach(m => {
+              chat += `${m.role}: ${m.content}\n`;
+            });
+            alert(`Turn #${item.id}:\n` + chat);
+          };
+          archivesDiv.appendChild(pill);
+        });
+      }
+      document.getElementById('btn-refresh').onclick = refreshMemory;
+      document.getElementById('btn-clear-ui').onclick = () => { log.innerHTML = ''; };
+      document.getElementById('btn-archive').onclick = async () => {
+        const sid = getSessionId();
+        await fetch(`/memory/archive?session_id=${sid}`, { method: 'POST' });
+        await refreshMemory();
+      };
+      document.getElementById('send').onclick = async () => {
+        const text = input.value.trim(); if (!text) return;
+        add('user', text);
+        const sid = getSessionId();
+        let current = [];
+        try { const mem = await (await fetch(`/memory?session_id=${sid}`)).json(); current = mem.current || []; } catch {}
+        const transcript = [...current, { role: 'user', content: text }];
+        const res = await fetch(`/chat?session_id=${sid}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: transcript })
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({detail:res.statusText})); add('system', 'Error: ' + (err.detail || 'unknown')); return; }
+        const data = await res.json(); const msg = data.message; add(msg.role, msg.content);
+        await refreshMemory(); input.value = '';
+      };
+      getSessionId(); refreshMemory();
+    </script>
+  </body>
+</html>

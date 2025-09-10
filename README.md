@@ -7,6 +7,15 @@ Adds:
 - UI Clear button (client-only)
 - Disk persistence in MEMORY_DIR (/data via docker-compose)
 
+## Create a .env file
+```
+OPENAI_API_KEY=<your_key>
+PORT=8080
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_TEMPERATURE=0.2
+MEMORY_DIR=/data
+```
+
 ## Quickstart
 cp .env .env
 # add your OPENAI_API_KEY
